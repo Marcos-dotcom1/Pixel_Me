@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Marcos",
+  "version": "1.0",
+  "description": "A pixel Marcos walks around your screen.",
+  "permissions": ["activeTab", "scripting"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["images/pixel_me.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "48": "images/pixel_me.png"
+  }
+}
