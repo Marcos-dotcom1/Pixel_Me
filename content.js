@@ -96,8 +96,8 @@ let idleTimer;
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    showSpeech("You've been idle... take a stretch! 🧘");
-  }, 60000);
+    showSpeech("You've been idle... Watcha doin?");
+  }, 240000);
 }
 ["mousemove", "keydown", "scroll"].forEach((evt) =>
   document.addEventListener(evt, resetIdleTimer)
