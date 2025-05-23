@@ -17,5 +17,5 @@ setInterval(() => {
 }, 30);
 
 buddy.addEventListener("click", () => {
-  alert("Yo, I'm Pixel Marcos!");
+  alert("LOOK MORTY IM A PIXEL, IM PIXEL MARCOS!!!");
 });
