@@ -89,7 +89,7 @@ const messages = [
 ];
 setInterval(() => {
   showSpeech(messages[Math.floor(Math.random() * messages.length)]);
-}, 60000);
+}, 30000);
 
 // --- Idle Reminder ---
 let idleTimer;
