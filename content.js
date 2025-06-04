@@ -5,23 +5,31 @@ buddy.style.bottom = "0px";
 buddy.style.left = "0px";
 buddy.style.zIndex = "99999";
 buddy.style.width = "64px";
-buddy.style.cursor = "pointer";
+buddy.style.cursor = "grab";
 buddy.style.userSelect = "none";
-buddy.style.transition = "none"; // Disable transitions for smooth animation control
+buddy.style.transition = "none";
 document.body.appendChild(buddy);
 
 // --- Animation State ---
 let direction = 1;
 let position = 0;
 let isFalling = false;
+let isGrabbed = false;
 let fallPosition = 0;
 let walkingInterval;
 let fallingInterval;
 
-// --- Falling Animation Configuration ---
+// --- Drag State ---
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+let mouseDownTime = 0;
+let mouseDownPos = { x: 0, y: 0 };
+let dragThreshold = 5; // pixels to move before it's considered a drag
+let clickTimeThreshold = 200; // ms - if held longer, it's a potential drag
+
+// --- Animation Configuration ---
 const FALL_CONFIG = {
   // Time each frame is displayed (in milliseconds)
-  fall1Duration: 100, // How long fall1.png shows while falling
   fall2Duration: 1500, // How long fall2.png shows on ground
   fall3Duration: 800, // How long fall3.png shows on ground
 
@@ -38,10 +46,10 @@ const FALL_CONFIG = {
 
 // --- Walking Animation ---
 function startWalking() {
-  if (walkingInterval) return; // Already walking
+  if (walkingInterval || isGrabbed || isFalling) return;
 
   walkingInterval = setInterval(() => {
-    if (isFalling) return;
+    if (isFalling || isGrabbed) return;
 
     position += 3 * direction;
     if (position > window.innerWidth - 64 || position < 0) {
@@ -59,9 +67,135 @@ function stopWalking() {
   }
 }
 
+// --- Click vs Drag Detection ---
+function handleMouseDown(e) {
+  if (isFalling) return; // Can't interact while falling
+
+  const clientX = e.type === "touchstart" ? e.touches[0].clientX : e.clientX;
+  const clientY = e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
+
+  // Record mouse down time and position
+  mouseDownTime = Date.now();
+  mouseDownPos = { x: clientX, y: clientY };
+
+  // Calculate offset for potential dragging
+  const buddyRect = buddy.getBoundingClientRect();
+  dragOffset.x = clientX - buddyRect.left;
+  dragOffset.y = clientY - buddyRect.top;
+
+  // Prevent default to avoid text selection
+  e.preventDefault();
+}
+
+function startDragging() {
+  if (isDragging || isGrabbed) return;
+
+  isDragging = true;
+  isGrabbed = true;
+  stopWalking();
+
+  // Change cursor and sprite
+  buddy.style.cursor = "grabbing";
+  buddy.src = chrome.runtime.getURL("images/pixel_me_grabbed.png");
+}
+
+function handleMouseMove(e) {
+  const clientX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
+  const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
+
+  // Check if we should start dragging
+  if (!isDragging && mouseDownTime > 0) {
+    const timeSinceDown = Date.now() - mouseDownTime;
+    const distanceMoved = Math.sqrt(
+      Math.pow(clientX - mouseDownPos.x, 2) +
+        Math.pow(clientY - mouseDownPos.y, 2)
+    );
+
+    // Start dragging if mouse moved enough or held long enough
+    if (distanceMoved > dragThreshold || timeSinceDown > clickTimeThreshold) {
+      startDragging();
+    }
+  }
+
+  // Continue dragging if already started
+  if (isDragging) {
+    drag(e);
+  }
+}
+
+function drag(e) {
+  if (!isDragging) return;
+
+  const clientX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
+  const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
+
+  // Calculate new position
+  const newLeft = clientX - dragOffset.x;
+  const newBottom = window.innerHeight - (clientY - dragOffset.y) - 64;
+
+  // Constrain to screen bounds
+  const constrainedLeft = Math.max(
+    0,
+    Math.min(newLeft, window.innerWidth - 64)
+  );
+  const constrainedBottom = Math.max(
+    0,
+    Math.min(newBottom, window.innerHeight - 64)
+  );
+
+  // Update position
+  buddy.style.left = `${constrainedLeft}px`;
+  buddy.style.bottom = `${constrainedBottom}px`;
+
+  // Update internal position tracking
+  position = constrainedLeft;
+
+  e.preventDefault();
+}
+
+function handleMouseUp(e) {
+  const wasClick = !isDragging && mouseDownTime > 0;
+
+  if (wasClick) {
+    // This was a click, not a drag - trigger falling
+    mouseDownTime = 0;
+    startFalling();
+  } else if (isDragging) {
+    // This was a drag - handle drop
+    stopDragging(e);
+  }
+
+  // Reset tracking variables
+  mouseDownTime = 0;
+}
+
+function stopDragging(e) {
+  if (!isDragging) return;
+
+  isDragging = false;
+  isGrabbed = false;
+  buddy.style.cursor = "grab";
+
+  // Get current height to determine if we should fall
+  const currentBottom = parseInt(buddy.style.bottom) || 0;
+
+  if (currentBottom > 0) {
+    // We're in the air, start falling
+    startFalling();
+  } else {
+    // We're on the ground, resume walking
+    buddy.src = chrome.runtime.getURL("images/pixel_me.png");
+    setTimeout(() => {
+      startWalking();
+    }, 500);
+  }
+
+  e.preventDefault();
+}
+
 // --- Enhanced Falling Animation ---
 function startFalling() {
-  if (isFalling) return; // Already falling
+  if (isFalling || isGrabbed) return;
 
   isFalling = true;
   stopWalking();
@@ -84,7 +218,6 @@ function startFalling() {
   // Pre-load images
   const preloadedImages = {};
   let imagesLoaded = 0;
-  const totalImages = Object.keys(fallingFrames).length;
 
   Object.entries(fallingFrames).forEach(([key, src]) => {
     const img = new Image();
@@ -187,11 +320,19 @@ function startFalling() {
   }, FALL_CONFIG.fallFrameRate);
 }
 
-// --- Click Handler ---
-buddy.addEventListener("click", (e) => {
-  e.preventDefault();
-  startFalling();
-});
+// --- Event Listeners ---
+// Mouse events
+buddy.addEventListener("mousedown", handleMouseDown);
+document.addEventListener("mousemove", handleMouseMove);
+document.addEventListener("mouseup", handleMouseUp);
+
+// Touch events for mobile
+buddy.addEventListener("touchstart", handleMouseDown);
+document.addEventListener("touchmove", handleMouseMove);
+document.addEventListener("touchend", handleMouseUp);
+
+// Prevent context menu on right click
+buddy.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Start initial walking
 startWalking();
@@ -265,9 +406,9 @@ const messages = [
   "Watch this! *does something cool* ⭐",
 ];
 
-// Only show random messages when not falling
+// Only show random messages when not falling or being grabbed
 setInterval(() => {
-  if (!isFalling) {
+  if (!isFalling && !isGrabbed) {
     showSpeech(messages[Math.floor(Math.random() * messages.length)]);
   }
 }, 30000);
@@ -277,7 +418,7 @@ let idleTimer;
 function resetIdleTimer() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (!isFalling) {
+    if (!isFalling && !isGrabbed) {
       showSpeech("You've been idle... Watcha doin?");
     }
   }, 240000);
@@ -289,7 +430,7 @@ resetIdleTimer();
 
 // --- Hydration Reminder ---
 setInterval(() => {
-  if (!isFalling) {
+  if (!isFalling && !isGrabbed) {
     showSpeech("💧 Time to hydrate!");
   }
 }, 1000 * 60 * 20);
