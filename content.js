@@ -18,6 +18,24 @@ let fallPosition = 0;
 let walkingInterval;
 let fallingInterval;
 
+// --- Falling Animation Configuration ---
+const FALL_CONFIG = {
+  // Time each frame is displayed (in milliseconds)
+  fall1Duration: 100, // How long fall1.png shows while falling
+  fall2Duration: 1500, // How long fall2.png shows on ground
+  fall3Duration: 800, // How long fall3.png shows on ground
+
+  // Physics settings
+  gravity: 0.8,
+  maxFallSpeed: 15,
+  fallFrameRate: 80, // How often to update fall animation (ms)
+
+  // Recovery settings
+  bounceScale: 0.8, // How much to squish on impact
+  bounceDuration: 200, // How long the bounce effect lasts
+  walkResumeDelay: 500, // Delay before resuming walking after fall3
+};
+
 // --- Walking Animation ---
 function startWalking() {
   if (walkingInterval) return; // Already walking
@@ -41,7 +59,7 @@ function stopWalking() {
   }
 }
 
-// --- Falling Animation ---
+// --- Enhanced Falling Animation ---
 function startFalling() {
   if (isFalling) return; // Already falling
 
@@ -53,93 +71,120 @@ function startFalling() {
   fallPosition = currentBottom;
 
   // Falling animation frames
-  const fallingFrames = [
-    chrome.runtime.getURL("images/pixel_me_fall1.png"),
-    chrome.runtime.getURL("images/pixel_me_fall2.png"),
-    chrome.runtime.getURL("images/pixel_me_fall3.png"),
-  ];
+  const fallingFrames = {
+    fall1: chrome.runtime.getURL("images/pixel_me_fall1.png"),
+    fall2: chrome.runtime.getURL("images/pixel_me_fall2.png"),
+    fall3: chrome.runtime.getURL("images/pixel_me_fall3.png"),
+  };
 
-  let frameIndex = 0;
   let fallSpeed = 0;
-  const gravity = 0.8;
-  const maxFallSpeed = 15;
+  let fallPhase = "falling"; // 'falling', 'impact', 'recovery1', 'recovery2'
+  let phaseStartTime = Date.now();
 
-  // Pre-load images to avoid loading issues during animation
-  const preloadedImages = [];
+  // Pre-load images
+  const preloadedImages = {};
   let imagesLoaded = 0;
+  const totalImages = Object.keys(fallingFrames).length;
 
-  // Try to preload images, but don't wait for them
-  fallingFrames.forEach((src, index) => {
+  Object.entries(fallingFrames).forEach(([key, src]) => {
     const img = new Image();
     img.onload = () => {
-      preloadedImages[index] = src;
+      preloadedImages[key] = src;
       imagesLoaded++;
-      console.log(`Loaded falling frame ${index}: ${src}`);
+      console.log(`Loaded ${key}: ${src}`);
     };
     img.onerror = () => {
-      preloadedImages[index] = null; // Mark as failed
+      preloadedImages[key] = null;
       imagesLoaded++;
-      console.log(`Failed to load falling frame ${index}: ${src}`);
+      console.log(`Failed to load ${key}: ${src}`);
     };
     img.src = src;
   });
 
+  // Main falling animation loop
   fallingInterval = setInterval(() => {
-    // Update fall physics
-    fallSpeed += gravity;
-    if (fallSpeed > maxFallSpeed) fallSpeed = maxFallSpeed;
+    const currentTime = Date.now();
+    const phaseElapsed = currentTime - phaseStartTime;
 
-    fallPosition -= fallSpeed;
+    switch (fallPhase) {
+      case "falling":
+        // Physics while falling
+        fallSpeed += FALL_CONFIG.gravity;
+        if (fallSpeed > FALL_CONFIG.maxFallSpeed)
+          fallSpeed = FALL_CONFIG.maxFallSpeed;
+        fallPosition -= fallSpeed;
 
-    // Calculate frame index
-    frameIndex =
-      Math.floor((currentBottom - fallPosition) / 20) % fallingFrames.length;
-
-    // Try to use preloaded image, fallback to CSS animation
-    if (preloadedImages[frameIndex]) {
-      // Image is available, use it
-      buddy.src = preloadedImages[frameIndex];
-      buddy.style.transform = direction === 1 ? "scaleX(1)" : "scaleX(-1)";
-    } else {
-      // Image not available, use CSS rotation fallback
-      const rotation = ((currentBottom - fallPosition) * 5) % 360;
-      buddy.style.transform = `${
-        direction === 1 ? "scaleX(1)" : "scaleX(-1)"
-      } rotate(${rotation}deg)`;
-    }
-
-    // Update position
-    buddy.style.bottom = `${Math.max(fallPosition, 0)}px`;
-
-    // Check if hit ground
-    if (fallPosition <= 0) {
-      // Impact effect
-      buddy.style.bottom = "0px";
-      buddy.style.transform = direction === 1 ? "scaleX(1)" : "scaleX(-1)";
-
-      // Bounce effect
-      buddy.style.transition = "transform 0.2s ease-out";
-      buddy.style.transform += " scaleY(0.8)";
-
-      setTimeout(() => {
+        // Show fall1 image while falling
+        if (preloadedImages.fall1) {
+          buddy.src = preloadedImages.fall1;
+        }
         buddy.style.transform = direction === 1 ? "scaleX(1)" : "scaleX(-1)";
-        buddy.style.transition = "none";
+        buddy.style.bottom = `${Math.max(fallPosition, 0)}px`;
 
-        // Reset to normal sprite
+        // Check if hit ground
+        if (fallPosition <= 0) {
+          buddy.style.bottom = "0px";
+          fallPhase = "impact";
+          phaseStartTime = currentTime;
+
+          // Impact bounce effect
+          buddy.style.transition = `transform ${FALL_CONFIG.bounceDuration}ms ease-out`;
+          buddy.style.transform = `${
+            direction === 1 ? "scaleX(1)" : "scaleX(-1)"
+          } scaleY(${FALL_CONFIG.bounceScale})`;
+
+          setTimeout(() => {
+            buddy.style.transform =
+              direction === 1 ? "scaleX(1)" : "scaleX(-1)";
+            buddy.style.transition = "none";
+          }, FALL_CONFIG.bounceDuration);
+        }
+        break;
+
+      case "impact":
+        // Show fall2 image on ground
+        if (preloadedImages.fall2) {
+          buddy.src = preloadedImages.fall2;
+        }
+        buddy.style.transform = direction === 1 ? "scaleX(1)" : "scaleX(-1)";
+
+        // Transition to recovery1 after fall2Duration
+        if (phaseElapsed >= FALL_CONFIG.fall2Duration) {
+          fallPhase = "recovery1";
+          phaseStartTime = currentTime;
+        }
+        break;
+
+      case "recovery1":
+        // Show fall3 image
+        if (preloadedImages.fall3) {
+          buddy.src = preloadedImages.fall3;
+        }
+        buddy.style.transform = direction === 1 ? "scaleX(1)" : "scaleX(-1)";
+
+        // Transition to recovery2 after fall3Duration
+        if (phaseElapsed >= FALL_CONFIG.fall3Duration) {
+          fallPhase = "recovery2";
+          phaseStartTime = currentTime;
+        }
+        break;
+
+      case "recovery2":
+        // Return to normal walking sprite
         buddy.src = chrome.runtime.getURL("images/pixel_me.png");
+        buddy.style.transform = direction === 1 ? "scaleX(1)" : "scaleX(-1)";
 
-        // Reset falling state and resume walking
+        // Clean up and resume walking
         isFalling = false;
         clearInterval(fallingInterval);
         fallingInterval = null;
 
-        // Resume walking after a short delay
         setTimeout(() => {
           startWalking();
-        }, 1000);
-      }, 200);
+        }, FALL_CONFIG.walkResumeDelay);
+        break;
     }
-  }, 80);
+  }, FALL_CONFIG.fallFrameRate);
 }
 
 // --- Click Handler ---
