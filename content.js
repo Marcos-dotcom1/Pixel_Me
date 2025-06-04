@@ -52,18 +52,37 @@ function startFalling() {
   const currentBottom = parseInt(buddy.style.bottom) || 0;
   fallPosition = currentBottom;
 
-  // Falling animation frames (you can replace these with actual image URLs)
+  // Falling animation frames
   const fallingFrames = [
     chrome.runtime.getURL("images/pixel_me_fall1.png"),
     chrome.runtime.getURL("images/pixel_me_fall2.png"),
     chrome.runtime.getURL("images/pixel_me_fall3.png"),
   ];
 
-  // If you don't have separate falling images, we'll simulate with CSS transforms
   let frameIndex = 0;
   let fallSpeed = 0;
   const gravity = 0.8;
   const maxFallSpeed = 15;
+
+  // Pre-load images to avoid loading issues during animation
+  const preloadedImages = [];
+  let imagesLoaded = 0;
+
+  // Try to preload images, but don't wait for them
+  fallingFrames.forEach((src, index) => {
+    const img = new Image();
+    img.onload = () => {
+      preloadedImages[index] = src;
+      imagesLoaded++;
+      console.log(`Loaded falling frame ${index}: ${src}`);
+    };
+    img.onerror = () => {
+      preloadedImages[index] = null; // Mark as failed
+      imagesLoaded++;
+      console.log(`Failed to load falling frame ${index}: ${src}`);
+    };
+    img.src = src;
+  });
 
   fallingInterval = setInterval(() => {
     // Update fall physics
@@ -72,23 +91,22 @@ function startFalling() {
 
     fallPosition -= fallSpeed;
 
-    // Animate falling frames
+    // Calculate frame index
     frameIndex =
       Math.floor((currentBottom - fallPosition) / 20) % fallingFrames.length;
 
-    // Try to load falling frame, fallback to rotation effect
-    const testImg = new Image();
-    testImg.onload = () => {
-      buddy.src = fallingFrames[frameIndex];
-    };
-    testImg.onerror = () => {
-      // Fallback: use CSS rotation for falling effect
+    // Try to use preloaded image, fallback to CSS animation
+    if (preloadedImages[frameIndex]) {
+      // Image is available, use it
+      buddy.src = preloadedImages[frameIndex];
+      buddy.style.transform = direction === 1 ? "scaleX(1)" : "scaleX(-1)";
+    } else {
+      // Image not available, use CSS rotation fallback
       const rotation = ((currentBottom - fallPosition) * 5) % 360;
       buddy.style.transform = `${
         direction === 1 ? "scaleX(1)" : "scaleX(-1)"
       } rotate(${rotation}deg)`;
-    };
-    testImg.src = fallingFrames[frameIndex];
+    }
 
     // Update position
     buddy.style.bottom = `${Math.max(fallPosition, 0)}px`;
@@ -110,9 +128,6 @@ function startFalling() {
         // Reset to normal sprite
         buddy.src = chrome.runtime.getURL("images/pixel_me.png");
 
-        // Show impact message
-        // showSpeech("Oof! That was fun! 🤕");
-
         // Reset falling state and resume walking
         isFalling = false;
         clearInterval(fallingInterval);
@@ -124,7 +139,7 @@ function startFalling() {
         }, 1000);
       }, 200);
     }
-  }, 16); // ~60fps
+  }, 0.8); // ~3fps
 }
 
 // --- Click Handler ---
