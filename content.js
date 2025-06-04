@@ -139,7 +139,7 @@ function startFalling() {
         }, 1000);
       }, 200);
     }
-  }, 0.8); // ~3fps
+  }, 80);
 }
 
 // --- Click Handler ---
