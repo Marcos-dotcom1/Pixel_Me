@@ -10,6 +10,10 @@ buddy.style.userSelect = "none";
 buddy.style.transition = "none";
 document.body.appendChild(buddy);
 
+// --- No overlapping speech ---
+let speechQueue = [];
+let speechBubbleActive = false;
+
 // --- Animation State ---
 let direction = 1;
 let position = 0;
@@ -339,6 +343,13 @@ startWalking();
 
 // --- Cute Speech Bubble ---
 function showSpeech(text) {
+  if (speechBubbleActive) {
+    speechQueue.push(text);
+    return;
+  }
+
+  speechBubbleActive = true;
+
   const bubble = document.createElement("div");
   bubble.textContent = text;
   bubble.style.position = "fixed";
@@ -359,7 +370,13 @@ function showSpeech(text) {
 
   setTimeout(() => {
     bubble.style.opacity = "0";
-    setTimeout(() => bubble.remove(), 500);
+    setTimeout(() => {
+      bubble.remove();
+      speechBubbleActive = false;
+      if (speechQueue.length > 0) {
+        showSpeech(speechQueue.shift()); // Show next in queue
+      }
+    }, 500);
   }, 3000);
 }
 
